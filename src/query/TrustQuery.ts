@@ -4,22 +4,32 @@ import { store } from '@/lib/firebase.ts';
 
 /**
  * Trust Reaction 쿼리
- * thumbs_up/down 평가 CRUD
+ * thumbs_up/down 평가 CRUD (타입 안전성 보완)
  */
 export class TrustQuery {
   /**
    * 모든 trust reactions 가져오기
    */
   static async findAll(): Promise<TrustReaction[]> {
-    const snapshot = await getDocs(collection(store, 'trust_reactions'));
+    try {
+      const snapshot = await getDocs(collection(store, 'trust_reactions'));
 
-    return snapshot.docs.map((doc) => ({
-      id: doc.id,
-      data: {
-        ...doc.data(),
-        updatedAt: doc.data().updatedAt?.toDate() || new Date(),
-      },
-    })) as TrustReaction[];
+      return snapshot.docs.map((doc) => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          data: {
+            from: data.from || '',
+            to: data.to || '',
+            reaction: (data.reaction as 'thumbs_up' | 'thumbs_down') || 'thumbs_up',
+            updatedAt: data.updatedAt?.toDate() || new Date(),
+          },
+        };
+      }) as TrustReaction[];
+    } catch (error) {
+      console.error('Error fetching trust reactions:', error);
+      return [];
+    }
   }
 
   /**
@@ -27,16 +37,26 @@ export class TrustQuery {
    * @param toUserId 대상 사용자 ID
    */
   static async findByToUser(toUserId: string): Promise<TrustReaction[]> {
-    const q = query(collection(store, 'trust_reactions'), where('to', '==', toUserId));
-    const snapshot = await getDocs(q);
+    try {
+      const q = query(collection(store, 'trust_reactions'), where('to', '==', toUserId));
+      const snapshot = await getDocs(q);
 
-    return snapshot.docs.map((doc) => ({
-      id: doc.id,
-      data: {
-        ...doc.data(),
-        updatedAt: doc.data().updatedAt?.toDate() || new Date(),
-      },
-    })) as TrustReaction[];
+      return snapshot.docs.map((doc) => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          data: {
+            from: data.from || '',
+            to: data.to || '',
+            reaction: (data.reaction as 'thumbs_up' | 'thumbs_down') || 'thumbs_up',
+            updatedAt: data.updatedAt?.toDate() || new Date(),
+          },
+        };
+      }) as TrustReaction[];
+    } catch (error) {
+      console.error('Error fetching reactions by toUser:', error);
+      return [];
+    }
   }
 
   /**
@@ -44,21 +64,31 @@ export class TrustQuery {
    * @param fromUserId 평가자 사용자 ID
    */
   static async findByFromUser(fromUserId: string): Promise<TrustReaction[]> {
-    const q = query(collection(store, 'trust_reactions'), where('from', '==', fromUserId));
-    const snapshot = await getDocs(q);
+    try {
+      const q = query(collection(store, 'trust_reactions'), where('from', '==', fromUserId));
+      const snapshot = await getDocs(q);
 
-    return snapshot.docs.map((doc) => ({
-      id: doc.id,
-      data: {
-        ...doc.data(),
-        updatedAt: doc.data().updatedAt?.toDate() || new Date(),
-      },
-    })) as TrustReaction[];
+      return snapshot.docs.map((doc) => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          data: {
+            from: data.from || '',
+            to: data.to || '',
+            reaction: (data.reaction as 'thumbs_up' | 'thumbs_down') || 'thumbs_up',
+            updatedAt: data.updatedAt?.toDate() || new Date(),
+          },
+        };
+      }) as TrustReaction[];
+    } catch (error) {
+      console.error('Error fetching reactions by fromUser:', error);
+      return [];
+    }
   }
 
   /**
-   * Trust reaction 생성 또는 업데이트
-   * 문서 ID는 `${from}_${to}` 형식으로 고정
+   * Trust reaction 생성 또는 업데이트 (중복 방지)
+   * 문서 ID는 `${from}_${to}` 형식으로 고정 (한 명이 한 명에게 한 번만 평가)
    * @param from 평가자 uid
    * @param to 대상 uid
    * @param reaction thumbs_up 또는 thumbs_down
@@ -68,6 +98,14 @@ export class TrustQuery {
     to: string,
     reaction: 'thumbs_up' | 'thumbs_down'
   ): Promise<TrustReaction> {
+    if (!from || !to) {
+      throw new Error('from and to are required');
+    }
+
+    if (from === to) {
+      throw new Error('Cannot react to yourself');
+    }
+
     const docId = `${from}_${to}`;
 
     const data = {
@@ -77,12 +115,19 @@ export class TrustQuery {
       updatedAt: new Date(),
     };
 
-    // setDoc with merge: true로 upsert
-    await setDoc(doc(store, 'trust_reactions', docId), data, { merge: true });
+    try {
+      // setDoc with merge: true로 upsert (중복 방지)
+      await setDoc(doc(store, 'trust_reactions', docId), data, { merge: true });
 
-    return {
-      id: docId,
-      data,
-    };
+      console.log('Trust reaction saved:', { from, to, reaction });
+
+      return {
+        id: docId,
+        data,
+      };
+    } catch (error) {
+      console.error('Error saving trust reaction:', error);
+      throw error;
+    }
   }
 }

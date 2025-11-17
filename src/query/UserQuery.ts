@@ -42,26 +42,43 @@ export class UserQuery {
     } as AppUser;
   }
 
+  /**
+   * ID 배열로 여러 사용자 조회 (안전 처리)
+   * @param ids 사용자 ID 배열
+   * @returns 사용자 목록
+   */
   static async findByIdIn(ids: string[]): Promise<AppUser[]> {
+    // 빈 배열이면 빈 배열 반환
+    if (!ids || ids.length === 0) {
+      return [];
+    }
+
     const result: AppUser[] = [];
 
+    // Firestore 'in' 쿼리는 최대 10개까지만 가능
     const chunkSize = 10;
     for (let i = 0; i < ids.length; i += chunkSize) {
       const chunk = ids.slice(i, i + chunkSize);
 
-      const q = query(
-        collection(store, 'User'),
-        where('__name__', 'in', chunk) // '__name__' = document ID
-      );
+      try {
+        const q = query(
+          collection(store, 'User'),
+          where('__name__', 'in', chunk) // '__name__' = document ID
+        );
 
-      const snapshot = await getDocs(q);
+        const snapshot = await getDocs(q);
 
-      snapshot.forEach((doc) => {
-        result.push({
-          id: doc.id,
-          data: doc.data(),
-        } as AppUser);
-      });
+        snapshot.forEach((doc) => {
+          result.push({
+            id: doc.id,
+            data: doc.data(),
+          } as AppUser);
+        });
+      } catch (error) {
+        console.error('Error fetching users chunk:', chunk, error);
+        // 에러 발생 시 계속 진행
+        continue;
+      }
     }
 
     return result;
@@ -100,15 +117,35 @@ export class UserQuery {
   }
 
   /**
-   * 사용자 위치 정보 업데이트
+   * 사용자 위치 정보 업데이트 (완전 구현)
    * @param userId 사용자 문서 ID
-   * @param geo 위도/경도 정보
+   * @param geo 위도/경도/도시명 정보
    */
   static async updateLocation(userId: string, geo: GeoPoint): Promise<void> {
-    const userDoc = doc(store, 'User', userId);
-    await updateDoc(userDoc, {
-      geo,
-      updatedAt: new Date(),
-    });
+    if (!userId) {
+      throw new Error('userId is required');
+    }
+
+    if (!geo || typeof geo.lat !== 'number' || typeof geo.lng !== 'number') {
+      throw new Error('Valid geo coordinates are required');
+    }
+
+    try {
+      const userDoc = doc(store, 'User', userId);
+
+      await updateDoc(userDoc, {
+        geo: {
+          lat: geo.lat,
+          lng: geo.lng,
+          cityName: geo.cityName || null, // cityName이 없으면 null
+        },
+        updatedAt: new Date(),
+      });
+
+      console.log('Location updated successfully:', { userId, geo });
+    } catch (error) {
+      console.error('Error updating location:', error);
+      throw error;
+    }
   }
 }
